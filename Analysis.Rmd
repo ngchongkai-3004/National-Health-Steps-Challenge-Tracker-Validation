@@ -1,0 +1,133 @@
+---
+title: "Validation Study of NSC trackers"
+author: "Ng Chong Kai"
+date: "28 May 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,include=T}
+library(readxl)
+Datasheet <- read_excel("E:/NUS ACAD/SPH3201/Week 3/Datasheet.xlsx")
+Datasheetnew=Datasheet[,-c(14:40)]
+```
+
+```{r,include=TRUE}
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(corrplot)
+```
+
+When looking at data, we realised that Participant HPB12F's d1 xtep was quite low as compared to the other values in the same column because she wore the device loosely. Hence, we shall replace it with a NA instead. Afterwards, we shall see that there are some NAs in the cells, we shall replace it by the median of the particular column.
+
+```{r,include=T}
+Datasheetnew[12,21]=NA
+
+replace.by.median=function(column){
+  for (i in 1:length(column)){
+    if (is.na(column[i])==T){
+      column[i]=median(column,na.rm=T)
+    }
+  }
+  return (column)
+}
+
+d1.all.trackers=apply(Datasheetnew[,c(16:23)],2,replace.by.median)
+d2.all.trackers=apply(Datasheetnew[,c(26:33)],2,replace.by.median)
+d3.all.trackers=apply(Datasheetnew[,c(36:43)],2,replace.by.median)
+
+Datasheetnew[,c(16:23)]=d1.all.trackers
+Datasheetnew[,c(26:33)]=d2.all.trackers
+Datasheetnew[,c(36:43)]=d3.all.trackers
+```
+
+Next, we shall consolidate all the rows with step trackers and find the mean. 
+
+```{r,include=T}
+Datasheetnew2=Datasheetnew%>%mutate(d1total=rowSums(Datasheetnew[,c(16:23)]),
+                   d1mean=rowMeans(Datasheetnew[,c(16:23)]),
+                   d2total=rowSums(Datasheetnew[,c(26:33)]),
+                   d2mean=rowMeans(Datasheetnew[,c(26:33)]),
+                   d3total=rowSums(Datasheetnew[,c(36:43)]),
+                   d3mean=rowMeans(Datasheetnew[,c(36:43)]))
+Datasheetnew2
+```
+
+
+We shall summarize the data into different genders.
+
+```{r,include=T}
+Datasheetnew2%>%group_by(Sex)%>%summarize(avg.bmi=mean(BMI),avg.height=mean(`Height (m)`),avg.weight=mean(`Weight (kg)`),avg.exercise=mean(`Exercise min`))
+```
+
+Next, we shall summarize the data into different ethnicity.
+
+```{r,include=T}
+Datasheetnew2%>%group_by(Ethnicity)%>%summarize(avg.bmi=mean(BMI),avg.height=mean(`Height (m)`),avg.weight=mean(`Weight (kg)`),avg.exercise=mean(`Exercise min`))
+```
+
+Lastly, we shall group the data by education. 
+
+```{r,include=T}
+Datasheetnew2%>%group_by(Education)%>%summarize(avg.bmi=mean(BMI),avg.height=mean(`Height (m)`),avg.weight=mean(`Weight (kg)`),avg.exercise=mean(`Exercise min`))
+```
+
+We shall include a correlation plot here. 
+
+```{r,include=T}
+correlationmatrix=cor(Datasheetnew2[,c(2,8:11,16:23,26:33,36:49)])
+corrplot(correlationmatrix, method='circle',type='upper',tl.srt=45)
+```
+
+```{r,include=T}
+Datasheetnew3=melt(Datasheetnew2[,c(1,16:23,26:33,36:43)])
+Days=function(Number_of_participants, Number_of_trackers){
+  Day1=rep('Day 1',Number_of_participants*Number_of_trackers)
+  Day2=rep('Day 2',Number_of_participants*Number_of_trackers)
+  Day3=rep('Day 3',Number_of_participants*Number_of_trackers)
+  String=c(Day1,Day2,Day3)
+}
+Datasheetnew3$Day=Days(34,8)
+Name.trackers=c(rep('Pedometer',34),rep('Careeach',34),rep('Mova',34),rep('Omniband',34),rep('Aibi',34),rep('Xtep',34),rep('Stride',34),rep('Stride+',34))
+Datasheetnew3$Tracker=as.factor(Name.trackers)
+colnames(Datasheetnew3)=c('ID','Variable','Steps','Day','Tracker')
+```
+
+Now, we shall create a line plot which shows the average and total of different step trackers across 3 days.
+
+We can also look at the boxplot which shows how the trackers differ.
+
+```{r,include=T}
+by_tracker=Datasheetnew3%>%group_by(Tracker,Day)%>%summarize(Total_Steps=sum(Steps),Average_Steps=Total_Steps/34)
+ggplot(by_tracker,aes(x=Tracker,y=Total_Steps,col=Day,group=Day))+geom_line(stat='identity')
+ggplot(by_tracker,aes(x=Tracker,y=Average_Steps,col=Day,group=Day))+geom_line(stat='identity')
+
+ggplot(Datasheetnew3,aes(x=Tracker,y=Steps,col=Tracker))+geom_boxplot()
+```
+
+We shall now proceed to test if there is any difference between the different kinds of trackers. 
+
+```{r,include=T}
+model=aov(Datasheetnew3$Steps~Datasheetnew3$Tracker)
+summary(model)
+```
+
+We shall now check for the assumptions made for the F-test. Firstly, there should be equal variances for all groups, whereby we can use the Bartlett test. Secondly, error are supposed to be independent normlaly distributed. We can either use normality test on residuals, or to look at residual plots. 
+
+```{r,include=T}
+bartlett.test(Datasheetnew3$Steps,Datasheetnew3$Tracker)
+resid=model$res
+ks.test(resid,'pnorm',mean(resid),sd(resid))
+```
+
+As assumptions are not met, we might want to use the Kruskal-Wallis test instead.
+
+```{r,include=T}
+kruskal.test(Datasheetnew3$Steps,Datasheetnew3$Tracker)
+```
+
+From the above, we can see that p value is less than 0.05, hence, there is a difference between the different trackers. 
